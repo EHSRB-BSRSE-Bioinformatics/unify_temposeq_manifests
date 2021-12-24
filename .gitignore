@@ -39,5 +39,5 @@ vignettes/*.pdf
 .Renviron
 
 
-original_manifests/*
+original_manifests/*.csv
 output_manifests
