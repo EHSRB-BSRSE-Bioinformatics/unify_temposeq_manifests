@@ -1,0 +1,13 @@
+probe name
+gene ensembl id
+gene symbol
+ligated sequence
+aligned transcript ids
+
+things to check
+
+lines without ensembl gene IDs
+do the lines without ensembl IDs have gene IDs?
+do the ensembl and entrez IDs match?
+same gene symbol (id?), different coordinates
+do the ligated coordinates match the coordinates of the gene? 

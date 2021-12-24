@@ -1,0 +1,434 @@
+---
+title: "TempoSeq Manifest Checks"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    theme: spacelab           # flatly spacelab sandstone cerulean``
+    code_download: true
+author: "Kate Cook"
+---
+
+```{r, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(biomaRt)
+ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+ensembl_mouse <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
+library(annotate)
+library(seqinr)
+library(knitr)
+
+
+```
+
+Set up files & do some data conversion. We're only going to consider the Human S1500+ 1.2 and 2.0, Human whole transcriptome, and Mouse S1500+ 1.2 gene sets, because those are the ones we use.
+
+
+```{r, echo=FALSE, results='hide'}
+# Set up files. We're only going to consider the Human S1500+ 1.2 and 2.0, Human whole transcriptome, and Mouse S1500+ 1.2 gene sets, because those are the ones we use.
+
+original_manifests_directory <- "original_manifests"
+
+human_s1500_1.2_file <- file.path(original_manifests_directory, "181019 Human S1500+ Surrogate 1.2 Manifest.csv")
+human_s1500_2.0_file <- file.path(original_manifests_directory, "191113_Human_S1500_Surrogate_2.0_Manifest.csv")
+human_whole_transcriptome_2.0_file <- file.path(original_manifests_directory, "191004_Human_Whole_Transcriptome_2.0_Manifest.csv")
+mouse_s1500_1.2_file <- file.path(original_manifests_directory, "181130 Mouse S1500+ Surrogate 1.2 Manifest.csv")
+
+df_human_s1500_1.2 <- read.csv(human_s1500_1.2_file)
+df_human_s1500_2.0 <- read.csv(human_s1500_2.0_file, sep='\t')
+df_human_wt_2.0 <- read.csv(human_whole_transcriptome_2.0_file)
+df_mouse_s1500_1.2 <- read.csv(mouse_s1500_1.2_file)
+```
+
+
+```{r, echo=FALSE, results='hide', warning=FALSE}
+# Do some data conversion
+
+df_human_s1500_2.0[df_human_s1500_2.0 == 'NULL'] <- NA
+df_human_s1500_2.0$ENTREZ_ID <- as.integer(df_human_s1500_2.0$ENTREZ_ID)
+df_human_s1500_2.0 <- df_human_s1500_2.0 %>% separate(PROBE_COORDINATE,sep='[:-]',into=c('probe_chrom','probe_start','probe_end'))
+
+df_human_wt_2.0[df_human_wt_2.0 == 'NULL'] <- NA
+df_human_wt_2.0$ENTREZ_ID <- as.integer(df_human_wt_2.0$ENTREZ_ID)
+df_human_wt_2.0 <- df_human_wt_2.0 %>% separate(LIGATED_COORDINATE,sep='[:-]',into=c('probe_chrom','probe_start','probe_end'))
+```
+
+
+```{r}
+
+# we'll need this later
+
+is_chr <- function(data, chr_col){
+  chr_str <- data[[chr_col]]
+  numeric <- suppressWarnings(as.numeric(chr_str))
+  return(case_when(
+    numeric<25~TRUE,
+    chr_str=="X"~TRUE,
+    chr_str=="Y"~TRUE,
+    chr_str=="MT"~TRUE,
+    TRUE~FALSE))
+}
+
+```
+
+# Missing Ensembl gene IDs
+
+The **human S1500 2.0** probe set is missing **`r df_human_s1500_2.0 %>% filter(is.na(ENSEMBL_GENE_ID)) %>% nrow()`** Ensembl IDs out of **`r df_human_s1500_2.0 %>% nrow()`**. Of those, **`r df_human_s1500_2.0 %>% filter(is.na(ENSEMBL_GENE_ID) & !is.na(ENTREZ_ID)) %>% nrow()`** have Entrez IDs. **`r df_human_s1500_2.0 %>% filter(is.na(ENSEMBL_GENE_ID) & is.na(ENTREZ_ID)) %>% nrow()`** have neither.
+
+The **human whole transcriptome 2.0** probe set is missing **`r df_human_wt_2.0 %>% filter(is.na(ENSEMBL_GENE_ID)) %>% nrow()`** Ensembl IDs out of **`r df_human_wt_2.0 %>% nrow()`**. Of those, **`r df_human_wt_2.0 %>% filter(is.na(ENSEMBL_GENE_ID) & !is.na(ENTREZ_ID)) %>% nrow()`** have Entrez IDs. **`r df_human_wt_2.0 %>% filter(is.na(ENSEMBL_GENE_ID) & is.na(ENTREZ_ID)) %>% nrow()`** have neither.
+
+The code below maps the Entrez IDs to Ensembl IDs where they exist.
+
+```{r}
+
+# df_human_s1500_2.0
+
+human_s1500_2.0_missing_ensembl_with_entrez <- df_human_s1500_2.0 %>%
+  filter(is.na(ENSEMBL_GENE_ID) & !is.na(ENTREZ_ID)) %>%
+  dplyr::select(ENTREZ_ID)
+
+human_s1500_2.0_ensembl_for_missing <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position'),
+      filters = 'entrezgene_id',
+      values = human_s1500_2.0_missing_ensembl_with_entrez, 
+      mart = ensembl)
+
+human_s1500_2.0_matched <- df_human_s1500_2.0 %>%
+  filter(is.na(ENSEMBL_GENE_ID) & !is.na(ENTREZ_ID)) %>%
+  left_join(human_s1500_2.0_ensembl_for_missing, by=c("ENTREZ_ID" = "entrezgene_id")) %>%
+  dplyr::select(PROBE_NAME,GENE_SYMBOL,probe_chrom,probe_start,probe_end,ENTREZ_ID,ensembl_gene_id,external_gene_name,chromosome_name,start_position,end_position)
+
+# I was hoping to be able to do this on the fly, but can't figure it out, so screw it
+human_s1500_2.0_matched <- human_s1500_2.0_matched %>% mutate(probe_is_chrom = is_chr(.,'probe_chrom')) %>% mutate(ensembl_is_chrom = is_chr(.,'chromosome_name'))
+
+######################################################################################
+
+# df_human_wt_2.0
+
+human_wt_2.0_missing_ensembl_with_entrez <- df_human_wt_2.0 %>%
+  filter(is.na(ENSEMBL_GENE_ID) & !is.na(ENTREZ_ID)) %>%
+  dplyr::select(ENTREZ_ID)
+
+human_wt_2.0_ensembl_for_missing <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position'),
+      filters = 'entrezgene_id',
+      values = human_wt_2.0_missing_ensembl_with_entrez, 
+      mart = ensembl)
+
+human_wt_2.0_matched <- df_human_wt_2.0 %>%
+  filter(is.na(ENSEMBL_GENE_ID) & !is.na(ENTREZ_ID)) %>%
+  left_join(human_wt_2.0_ensembl_for_missing, by=c("ENTREZ_ID" = "entrezgene_id")) %>%
+  dplyr::select(PROBE_ID,GENE_SYMBOL,probe_chrom,probe_start,probe_end,ENTREZ_ID,ensembl_gene_id,external_gene_name,chromosome_name,start_position,end_position)
+
+human_wt_2.0_matched <- human_wt_2.0_matched %>% mutate(probe_is_chrom = is_chr(.,'probe_chrom')) %>% mutate(ensembl_is_chrom = is_chr(.,'chromosome_name'))
+
+
+```
+
+For the **human S1500 2.0** probe set, we found matches for **`r nrow(human_s1500_2.0_matched)`** out of **`r nrow(human_s1500_2.0_missing_ensembl_with_entrez)`** probes.
+
+For the **human WT 2.0** probe set, we found matches for **`r nrow(human_wt_2.0_matched)`** out of **`r nrow(human_wt_2.0_missing_ensembl_with_entrez)`** probes.
+
+Next, check for two possible problems: multiple Ensembl matches for a single Entrez ID, and Ensembl matches that map to different chromosomes from the original probe.
+
+## Multiple Ensemble matches for a single Entrez ID
+
+In all cases below, the table shown is the problematic cases. In some cases I looked into this further (ie going to the Ensembl site or looking at a genome browser to see what's up.)
+
+### Results for human s1500 2.0
+```{r}
+
+res <- human_s1500_2.0_matched %>% group_by(PROBE_NAME) %>% filter(n() > 1)
+
+kable(res)
+ 
+```
+
+This is a bunch of HLA genes, which you can see if we filter to only show "real" chromosomes (1-22, X, Y, MT)
+
+```{r}
+res <- human_s1500_2.0_matched %>% filter(probe_is_chrom) %>% group_by(PROBE_NAME) %>% filter(n() > 1)
+
+kable(res)
+
+```
+I am not sure how much we care about these, or any probes that are targeting genes on non-standard chromosomes.
+
+### Results for human WT 2.0
+```{r}
+res <- human_wt_2.0_matched %>% filter(probe_is_chrom) %>% filter(ensembl_is_chrom) %>% group_by(PROBE_ID) %>% filter(n() > 1)  
+
+kable(res)
+```
+
+After looking into this, it looks like both of these are due to ensembl errors (in that there are multiple ensembl IDs pointing to the same entrez gene, and one of them appears to be wrong).
+
+## Check that Ensembl chromosome and the probe chromosome match
+
+Again, the table contains the values for which the chromosomes don't match
+
+### Results for human s1500 2.0
+
+First table is all cases where the probe chromosome is not the same as the Ensembl chromosome. Second table is the same but filtering non-numeric chromosomes.
+
+```{r}
+# check that the probe chromosome and the ensembl chromosome match, as well as the probe gene symbol and the ensembl gene symbol
+
+res <- human_s1500_2.0_matched %>% filter(probe_chrom != chromosome_name)
+res2 <- human_s1500_2.0_matched  %>% filter(probe_is_chrom) %>% filter(ensembl_is_chrom) %>% filter(probe_chrom != chromosome_name) # Just HLA genes again
+res3 <- human_s1500_2.0_matched %>% filter(GENE_SYMBOL != external_gene_name)
+# LUZP6 and MTPN is a bicistronic gene
+# LOC100505501 is a novel transcript without an HGNC name
+
+kable(res)
+kable(res2)
+
+```
+
+Lots of HLA genes again.
+
+Now look for cases where the gene symbols don't match
+
+```{r}
+
+kable(res3)
+
+```
+
+LUZP6 and MTPN is a bicistronic gene--not sure what to do about that one! LOC100505501 is a novel transcript without an HGNC name.
+
+### Results for human WT 2.0
+
+Checking chromosome names. This time, filter the nonstandard chromosomes out early.
+```{r, warning=FALSE}
+
+
+res <- human_wt_2.0_matched %>% filter(probe_is_chrom) %>% filter(ensembl_is_chrom) %>%  filter(probe_chrom != chromosome_name) 
+
+kable(res)
+
+```
+
+Ok, looks good. (that was an empty table)
+
+Checking gene symbols
+
+```{r}
+
+res <- human_wt_2.0_matched %>% filter(probe_is_chrom) %>% filter(ensembl_is_chrom) %>% filter(GENE_SYMBOL != external_gene_name)
+
+kable(res)
+
+```
+
+Bunch of stuff to deal with here. ARL17A/B, ERICH2, LUZP6/MTPN and LOC100505501 we've seen before. The other two LOCs are agian uncharacterized genes. In these cases, the Ensembl ID is OK even though they don't match, but ultimately it probably doesn't matter that much.
+
+# Missing Ensembl & Entrez gene IDs
+
+```{r}
+
+human_s1500_2.0_no_entrez_or_ensembl <- df_human_s1500_2.0 %>% filter(is.na(ENSEMBL_GENE_ID) & is.na(ENTREZ_ID))
+
+human_wt_2.0_no_entrez_or_ensembl <- df_human_wt_2.0 %>% filter(is.na(ENSEMBL_GENE_ID) & is.na(ENTREZ_ID))
+
+```
+
+There are `r human_s1500_2.0_no_entrez_or_ensembl %>% nrow()` probes in the human S1500+ dataset with neither Ensembl or Entrez IDs, and `r human_wt_2.0_no_entrez_or_ensembl %>% nrow()` in the human WT 2.0 dataset.
+
+For the cases where there is no Ensembl or Entrez ID, map the probe sequence to a set of human mRNAs (refseq) using BLAT (using gfServer/gfClient to approximate web BLAT) and then look up the gene ID/symbol for those mRNAs.
+
+This is a bit of a dicier operation, so double check that the result has the same gene symbol as the probe.
+
+### Results for human s1500 2.0
+
+First, try the S1500+ dataset:
+
+```{r}
+# start the server outside of R using
+#  ~/bin/gfServer start 127.0.0.1 1234 -stepSize=5 /home/katecook/Documents/HC_EHSRB/data/genomes/GRCh38_latest_rna.2bit
+
+fasta_file <- "/home/katecook/Documents/HC_EHSRB/projects/temposeq_probe_annotations/probe_sequences.fa"
+
+write.fasta(as.list(human_s1500_2.0_no_entrez_or_ensembl$LIGATED_SEQUENCE), human_s1500_2.0_no_entrez_or_ensembl$PROBE_NAME, fasta_file, open = "w", nbchar = 60, as.string = TRUE)
+
+alignment_file <- "/home/katecook/Documents/HC_EHSRB/projects/temposeq_probe_annotations/out.psl"
+
+system(paste("~/bin/gfClient -minScore=20 -minIdentity=0 127.0.0.1 1234 ~/Documents/HC_EHSRB/data/genomes/",fasta_file,alignment_file))
+
+human_S1500_alignments <- read.table(alignment_file, header=FALSE, sep='\t', skip=5)
+
+names(human_S1500_alignments) <- c('match','mismatch','rep.match','Ns','Q_gap_count','Q_gap_bases','T_gap_count','T_gap_bases','strand','Q_name','Q_size','Q_start','Q_end','T_name','T_size','T_start','T_end','block_count','blockSizes','qStarts','tStarts')
+
+# mimic BLAT web's score assuming repeats aren't a problem
+human_S1500_alignments <- human_S1500_alignments %>% mutate(score = match - mismatch - Q_gap_count - T_gap_count)
+
+human_S1500_best_align_per_probe <- human_S1500_alignments %>% group_by(Q_name) %>% slice_max(score, n=1) %>% slice_head(n=1) %>% ungroup()
+
+
+human_S1500_refseq_matches <- human_S1500_best_align_per_probe %>% separate(T_name,into="refseq",sep='[.]') %>% dplyr::select(Q_name,refseq)
+
+human_S1500_ensembl_for_refseq <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position','refseq_mrna'),
+      filters = 'refseq_mrna',
+      values = human_S1500_refseq_matches$refseq, 
+      mart = ensembl)
+
+human_S1500_ensembl_for_refseq <- human_S1500_ensembl_for_refseq %>% mutate(chromosome_name = as.integer(chromosome_name)) %>% filter(!is.na(chromosome_name))
+
+human_S1500_matched_by_sequence <- human_S1500_refseq_matches %>% left_join(human_S1500_ensembl_for_refseq, by=c("refseq" = "refseq_mrna")) %>% left_join(human_s1500_2.0_no_entrez_or_ensembl, by=c("Q_name" = "PROBE_NAME"))
+
+kable(human_S1500_matched_by_sequence)
+
+res <- human_S1500_matched_by_sequence %>% filter(external_gene_name != GENE_SYMBOL)
+
+kable(res)
+
+```
+
+We found `r human_S1500_matched_by_sequence %>% nrow()` matches with `r res %>% nrow()` questionable results (where the gene names don't match)
+
+### Results for human WT 2.0
+
+
+```{r}
+# start the server outside of R using
+#  ~/bin/gfServer start 127.0.0.1 1234 -stepSize=5 /home/katecook/Documents/HC_EHSRB/data/genomes/GRCh38_latest_rna.2bit
+
+fasta_file <- "/home/katecook/Documents/HC_EHSRB/projects/temposeq_probe_annotations/probe_sequences.fa"
+
+write.fasta(as.list(human_wt_2.0_no_entrez_or_ensembl$LIGATED_SEQUENCE), human_wt_2.0_no_entrez_or_ensembl$PROBE_NAME, fasta_file, open = "w", nbchar = 60, as.string = TRUE)
+
+alignment_file <- "/home/katecook/Documents/HC_EHSRB/projects/temposeq_probe_annotations/out.psl"
+
+system(paste("~/bin/gfClient -minScore=20 -minIdentity=0 127.0.0.1 1234 ~/Documents/HC_EHSRB/data/genomes/",fasta_file,alignment_file))
+
+human_wt_alignments <- read.table(alignment_file, header=FALSE, sep='\t', skip=5)
+
+names(human_wt_alignments) <- c('match','mismatch','rep.match','Ns','Q_gap_count','Q_gap_bases','T_gap_count','T_gap_bases','strand','Q_name','Q_size','Q_start','Q_end','T_name','T_size','T_start','T_end','block_count','blockSizes','qStarts','tStarts')
+
+# mimic BLAT web's score assuming repeats aren't a problem
+human_wt_alignments <- human_wt_alignments %>% mutate(score = match - mismatch - Q_gap_count - T_gap_count)
+
+human_wt_best_align_per_probe <- human_wt_alignments %>% group_by(Q_name) %>% slice_max(score, n=1) %>% slice_head(n=1) %>% ungroup()
+
+
+human_wt_refseq_matches <- human_wt_best_align_per_probe %>% separate(T_name,into="refseq",sep='[.]') %>% dplyr::select(Q_name,refseq)
+
+human_wt_ensembl_for_refseq <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position','refseq_mrna'),
+      filters = 'refseq_mrna',
+      values = human_wt_refseq_matches$refseq, 
+      mart = ensembl)
+
+human_wt_ensembl_for_refseq <- human_wt_ensembl_for_refseq %>% mutate(chromosome_name = as.integer(chromosome_name)) %>% filter(!is.na(chromosome_name))
+
+human_wt_matched_by_sequence <- human_wt_refseq_matches %>% inner_join(human_wt_ensembl_for_refseq, by=c("refseq" = "refseq_mrna")) %>% inner_join(human_wt_2.0_no_entrez_or_ensembl, by=c("Q_name" = "PROBE_NAME"))
+
+kable(human_wt_matched_by_sequence)
+
+res <- human_wt_matched_by_sequence %>% filter(external_gene_name != GENE_SYMBOL)
+
+kable(res)
+
+```
+
+We found `r human_wt_matched_by_sequence %>% nrow()` matches with `r res %>% nrow()` questionable results (where the gene names don't match)
+
+# Other potential problems
+
+## Genes with multiple probes mapping to multiple chromosomes
+
+```{r}
+
+human_s1500_probes_mapping_to_different_chroms <- df_human_s1500_2.0 %>% filter(!is.na(probe_chrom)) %>% group_by(GENE_SYMBOL) %>% mutate(num_chrom = n_distinct(probe_chrom)) %>% filter(num_chrom > 1) %>% ungroup %>% arrange(GENE_SYMBOL)
+
+
+human_wt_probes_mapping_to_different_chroms <- df_human_wt_2.0 %>%filter(!is.na(probe_chrom)) %>% group_by(GENE_SYMBOL) %>% mutate(num_chrom = n_distinct(probe_chrom)) %>% filter(num_chrom > 1) %>% ungroup %>% arrange(GENE_SYMBOL)
+
+
+kable(human_s1500_probes_mapping_to_different_chroms)
+kable(human_wt_probes_mapping_to_different_chroms)
+
+```
+
+Ok, looks like it's just nonstandard chromosomes. Not that big a deal, although irritating.
+
+
+# Human S1500+ 1.2
+
+Ok, this one doesn't have Ensembl IDs, just Refseqs. So we're going to have to get the Ensembl IDs
+
+```{r}
+
+
+human_S1500_1.2_ensembl_results <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position','refseq_mrna'),
+      filters = 'refseq_mrna',
+      values = df_human_s1500_1.2$Reference.Transcript, 
+      mart = ensembl)
+
+human_S1500_1.2_ensembl_for_refseq <- human_S1500_1.2_ensembl_results %>% mutate(ensembl_is_chrom = is_chr(.,'chromosome_name')) %>% group_by(refseq_mrna) %>% arrange(!ensembl_is_chrom, by_group=TRUE) %>% slice_head(n=1)
+
+human_S1500_1.2_matched <- df_human_s1500_1.2 %>% left_join(human_S1500_1.2_ensembl_for_refseq, by=c("Reference.Transcript" = "refseq_mrna"))
+
+different_gene_names <- human_S1500_1.2_matched %>% filter(Gene.Symbol != external_gene_name) 
+
+human_S1500_1.2_ensembl_for_refseq_with_synonym <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','external_synonym','chromosome_name','start_position','end_position','refseq_mrna'),
+      filters = 'refseq_mrna',
+      values = df_human_s1500_1.2$Reference.Transcript, 
+      mart = ensembl)
+
+human_S1500_1.2_matched_with_synonyms <- df_human_s1500_1.2 %>% full_join(human_S1500_1.2_ensembl_for_refseq_with_synonym, by=c("Reference.Transcript" = "refseq_mrna"))
+
+
+synonym_matches <- human_S1500_1.2_matched_with_synonyms %>% filter(Gene.Symbol != external_gene_name) %>% group_by(Probe.name) %>% filter(Gene.Symbol == external_synonym)
+
+
+```
+
+Ok, we got `r nrow(human_S1500_1.2_ensembl_for_refseq)` matches (out of `r nrow(df_human_s1500_1.2)`). However, `r nrow(different_gene_names)` have gene names that don't match. Spot checking a few examples, it looks like they're HGNC names that were updated since the 1.2 manifest was developed. An additional `r nrow(synonym_matches)` match on a gene name synonym.
+
+# Mouse S1500+ 1.2
+
+```{r}
+
+df_mouse_s1500_1.2 <- df_mouse_s1500_1.2 %>% separate(Transcripts.Targeted, c("first_transcript","second_transcript","third_transcript"), sep='[+]', remove=FALSE)
+
+
+mouse_S1500_1.2_ensembl_for_transcript_1 <- getBM(attributes = c('ensembl_transcript_id','entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position'),
+      filters = 'ensembl_transcript_id',
+      values = df_mouse_s1500_1.2$first_transcript,
+      mart = ensembl_mouse)
+
+mouse_S1500_1.2_matched_first_transcript <- df_mouse_s1500_1.2 %>% inner_join(mouse_S1500_1.2_ensembl_for_transcript_1, by=c("first_transcript" = "ensembl_transcript_id")) %>% mutate(matched_transcript = first_transcript)
+
+
+mouse_S1500_1.2_ensembl_for_transcript_2 <- getBM(attributes = c('ensembl_transcript_id','entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position'),
+      filters = 'ensembl_transcript_id',
+      values = df_mouse_s1500_1.2 %>% left_join(mouse_S1500_1.2_ensembl_for_transcript_1, by=c("first_transcript" = "ensembl_transcript_id")) %>% filter(is.na(ensembl_gene_id)) %>% dplyr::select(second_transcript),
+      mart = ensembl_mouse)
+
+
+mouse_S1500_1.2_matched_second_transcript <- df_mouse_s1500_1.2 %>% inner_join(mouse_S1500_1.2_ensembl_for_transcript_2, by=c("second_transcript" = "ensembl_transcript_id")) %>% mutate(matched_transcript = second_transcript)
+
+
+mouse_S1500_1.2_ensembl_for_transcript_3 <- getBM(attributes = c('ensembl_transcript_id','entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position'),
+      filters = 'ensembl_transcript_id',
+      values = df_mouse_s1500_1.2 %>% left_join(mouse_S1500_1.2_ensembl_for_transcript_2, by=c("second_transcript" = "ensembl_transcript_id")) %>% filter(is.na(ensembl_gene_id)) %>% dplyr::select(third_transcript),
+      mart = ensembl_mouse)
+
+
+mouse_S1500_1.2_matched_third_transcript <- df_mouse_s1500_1.2 %>% inner_join(mouse_S1500_1.2_ensembl_for_transcript_2, by=c("third_transcript" = "ensembl_transcript_id")) %>% mutate(matched_transcript = third_transcript)
+
+
+mouse_S1500_1.2_all_matches <- rbind(mouse_S1500_1.2_matched_first_transcript, mouse_S1500_1.2_matched_second_transcript, mouse_S1500_1.2_matched_third_transcript)
+
+different_gene_names <- mouse_S1500_1.2_all_matches %>% filter(Gene.Symbol != external_gene_name)
+
+synonym_ensembl <- getBM(attributes = c('ensembl_transcript_id','entrezgene_id','ensembl_gene_id','external_gene_name','external_synonym','chromosome_name','start_position','end_position'),
+      filters = 'ensembl_transcript_id',
+      values = different_gene_names$matched_transcript,
+      mart = ensembl_mouse)
+
+synonym_matches <- different_gene_names %>% dplyr::select(Probe.Name,Gene.Symbol,Probe.Sequence,Transcripts.Targeted,matched_transcript) %>% inner_join(synonym_ensembl, by=c("matched_transcript" = "ensembl_transcript_id")) %>% group_by(Probe.Name) %>% filter(Gene.Symbol == external_synonym)
+
+
+```
+I was able to match `r nrow(mouse_S1500_1.2_all_matches)` matches (out of `r nrow(df_mouse_s1500_1.2)`). However, `r nrow(different_gene_names)` have gene names that don't match. An additional `r nrow(synonym_matches)` match on a gene name synonym.
