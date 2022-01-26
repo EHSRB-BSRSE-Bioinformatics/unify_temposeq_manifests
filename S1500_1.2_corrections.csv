@@ -1,0 +1,34 @@
+Probe.Name,correct_gene_symbol,ensembl_id,ncbi_id,comment
+ANXA2P2_305,,,,probe matches better to homolog & pseudogene
+BCL2L2_665,BCL2L2,ENSG00000129473,599,refseq points to readthrough transcript but probe OK
+CBWD6_26970,,,,"probe matches the whole family perfectly, what do"
+CSNK1E_1602,CSNK1E,ENSG00000213923,1454,refseq points to readthrough transcript but probe OK
+DEFA1B_21887,,,,probe matches DEFA1 and DEFA1B perfectly
+FAM69A_27207,DIPK1A,ENSG00000154511,388650,name change
+GAGE2D_22568,,,,"this family is all pretty similar, probes match multiple"
+GAGE3_23922,,,,"this family is all pretty similar, probes match multiple"
+GAGE3_23922,,,,"this family is all pretty similar, probes match multiple"
+GAGE4_2578,,,,"this family is all pretty similar, probes match multiple"
+GLB1_2661,TMPPE,ENSG00000188167,643853,genes overlap but TMPPE is a better match for this probe
+GTF2H2B_18022,GTF2H2,ENSG00000145736,2966,refseq and probe both match GTF2H2
+GTF2H2C_19129,,,,probe matches multiple genes
+GTF2H2C_2837,,,,probe matches multiple genes
+H2AFV_28424,,,,probe sequence and targeted refseq transcript match a completely different gene on a different chromosome (AKR7A2)
+HDGFRP3_2909,HDGFL3,ENSG00000166503,50810,name change
+HIST1H2AK_20840,,,,probe matches multiple genes
+HIST1H2BD_18171,H2BC5,ENSG00000158373,3017,name change
+HIST2H2AA4_2963,,,,probe matches multiple genes
+HIST2H2AA4_2964,,,,probe matches multiple genes
+LUZP6_19140,LUZP6/MTPN,ENSG00000105887,767558,"bicistronic gene, relabeling symbol to reflect that (not sure that’s the right thing to do)"
+NME1_4611,NME1,ENSG00000239672,4830,refseq points to readthrough transcript but probe OK
+PCDHA1_4960,PCDHA2,ENSG00000204969,56146,probe sequences and targeted refseq transcript match a different gene in the family better
+PGA5_26280,PGA5,ENSG00000256713,5222,refseq is for different gene (PGA3) but probe OK
+RGPD1_12424,,,,probe matches two genes perfectly
+RGPD2_5823,RGPD3,ENSG00000153165,653489,probe sequences and targeted refseq transcript match a different gene in the family better
+RPS10_28213,RPS10,ENSG00000124614,6204,refseq points to readthrough transcript but probe OK
+SPANXA2_6696,,,,probe matches multple family members
+TPSB2_17547,,,,probe matches multple family members
+TRGC2_28228,,,,probe matches multple family members
+UGT1A10_28864,,,,This gene family is impossible to untangle
+UGT1A8_28230,,,,This gene family is impossible to untangle
+WISP1_26670,CCN4,ENSG00000104415,8840,name change
