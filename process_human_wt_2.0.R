@@ -438,13 +438,20 @@ remaining3$Entrez.ID[remaining3$Gene.Symbol == "XR"] <- 317705
 
 output_manifest_final <- remaining3 %>%
   dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence) %>%
-  bind_rows(output_manifest5)
+  bind_rows(output_manifest5) %>%
+  left_join(manifest %>% dplyr::select(Probe.ID, Transcripts.Covered)) 
 
 check_data_unique(output_manifest_final)
 
-
+output_manifest_formatted <- output_manifest_final %>%
+  mutate(Probe_Name = paste0(Gene.Symbol, "_", Probe.ID), Probe_ID = as.integer(Probe.ID)) %>%
+  dplyr::select(Probe_ID, Probe_Name, Gene_Symbol = Gene.Symbol, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence, Transcripts_Targeted = Transcripts.Covered) %>%
+  arrange(Probe_ID)
+  
+  
+  
 output_file <- file.path(output_directory, output_filename)
 
-write.csv(output_manifest_final, output_file, row.names=F)
+write.csv(output_manifest_formatted, output_file, row.names=F)
 
 

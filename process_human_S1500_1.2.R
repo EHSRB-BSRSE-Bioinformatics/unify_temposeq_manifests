@@ -26,17 +26,6 @@ httr::set_config(httr::config(ssl_verifypeer = FALSE))
 #####################################################################################################################
 # functions
 
-# is_chr <- function(data, chr_col){
-#   chr_str <- data[[chr_col]]
-#   numeric <- suppressWarnings(as.numeric(chr_str))
-#   return(case_when(
-#     numeric<25~TRUE,
-#     chr_str=="X"~TRUE,
-#     chr_str=="Y"~TRUE,
-#     chr_str=="MT"~TRUE,
-#     TRUE~FALSE))
-# }
-
 check_data_unique <- function(x){
   n <- x %>% nrow()
   n_unique <- x %>% unique() %>% nrow()
@@ -197,14 +186,17 @@ output_manifest_final <- remaining3 %>%
   dplyr::select(Probe.ID, Gene.Symbol, Probe.Sequence) %>%
   bind_rows(output_manifest3) %>%
   mutate(Probe.Name = paste0(Gene.Symbol, "_", Probe.ID)) %>%
-  inner_join(manifest, by="Probe.ID") %>%
-  dplyr::select(Probe.ID, Gene.Symbol = Gene.Symbol.x, Probe.Sequence = Probe.Sequence.x, ENSEMBL.Gene.ID, Entrez.ID, Probe.Name = Probe.Name.x, Transcripts.Targeted)
+  inner_join(manifest, by="Probe.ID") 
 
 check_data_unique(output_manifest_final)
 
+output_manifest_formatted <- output_manifest_final %>%
+  dplyr::select(Probe_ID = Probe.ID, Probe_Name = Probe.Name.x, Gene_Symbol = Gene.Symbol.x, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence.x, Transcripts_Targeted = Transcripts.Targeted) %>%
+  arrange(Probe_ID)
+
 output_file <- file.path(output_directory, output_filename)
 
-write.csv(output_manifest_final, output_file, row.names=F)
+write.csv(output_manifest_formatted, output_file, row.names=F)
 
 
 

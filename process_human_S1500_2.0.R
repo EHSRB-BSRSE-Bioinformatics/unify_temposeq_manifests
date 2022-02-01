@@ -231,6 +231,7 @@ stopifnot(all(entrez_matched$probe_chrom == entrez_matched$entrez_chromosome))
 entrez_matched$ensembl_id <- as.character(entrez_matched$ensembl_id)
 
 output_manifest4 <- entrez_matched %>%
+  unique() %>%
   dplyr::select(PROBE_ID, GENE_SYMBOL, ENSEMBL_GENE_ID=ensembl_id, ENTREZ_ID, LIGATED_SEQUENCE, ALIGNED_REFSEQ_TRANSCRIPTS) %>%
   bind_rows(output_manifest3)
 
@@ -354,8 +355,8 @@ check_data_unique(output_manifest6)
 
 remaining3 <- manifest %>%
   dplyr::select(PROBE_ID) %>%
-  left_join(output_manifest6) %>%
-  filter(is.na(ENTREZ_ID) | is.na(ENSEMBL_GENE_ID)) %>%
+  left_join(output_manifest6 %>% dplyr::select(PROBE_ID,GENE_SYMBOL_6 = GENE_SYMBOL)) %>%
+  filter(is.na(GENE_SYMBOL_6)) %>%
   dplyr::select(PROBE_ID) %>%
   inner_join(manifest)
 
@@ -386,9 +387,16 @@ output_manifest_final <- remaining3 %>%
   dplyr::select(PROBE_ID, GENE_SYMBOL, ENSEMBL_GENE_ID, ENTREZ_ID, LIGATED_SEQUENCE, ALIGNED_REFSEQ_TRANSCRIPTS) %>%
   bind_rows(output_manifest6)
 
+check_data_unique(output_manifest_final)
+
+output_manifest_formatted <- output_manifest_final %>%
+  mutate(Probe_Name = paste0(GENE_SYMBOL, "_", PROBE_ID)) %>%
+  dplyr::select(Probe_ID = PROBE_ID, Probe_Name, Gene_Symbol = GENE_SYMBOL, Ensembl_Gene_ID = ENSEMBL_GENE_ID, Entrez_ID = ENTREZ_ID, Probe_Sequence = LIGATED_SEQUENCE, Transcripts_Targeted = ALIGNED_REFSEQ_TRANSCRIPTS) %>%
+  arrange(Probe_ID)
+
 
 output_file <- file.path(output_directory, output_filename)
 
-write.csv(output_manifest_final, output_file, row.names=F)
+write.csv(output_manifest_formatted, output_file, row.names=F)
 
 
