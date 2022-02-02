@@ -220,15 +220,21 @@ get_gene_info_from_ncbi_using_entrez <- function(entrez_id){
 
 ensembl_results <- bind_rows(lapply(remaining_missing_ensembl$ENTREZ_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
 
-# two measly genes, argh
 entrez_matched <- remaining_missing_ensembl %>%
   inner_join(ensembl_results, by=c("ENTREZ_ID" = "entrez_id"))
+
+# update some gene names
+entrez_matched$GENE_SYMBOL[entrez_matched$gene_symbol == "GUSBP15"] = "GUSBP15"
+entrez_matched$GENE_SYMBOL[entrez_matched$gene_symbol == "DPH5-DT"] = "DPH5-DT"
+
 # error checking
 
 stopifnot(all(entrez_matched$GENE_SYMBOL == entrez_matched$gene_symbol))
 stopifnot(all(entrez_matched$probe_chrom == entrez_matched$entrez_chromosome))
 
+# hackity hack hack
 entrez_matched$ensembl_id <- as.character(entrez_matched$ensembl_id)
+entrez_matched$ensembl_id[entrez_matched$ensembl_id == "character(0)"] <- NA
 
 output_manifest4 <- entrez_matched %>%
   unique() %>%
@@ -331,10 +337,15 @@ good_results_symbol$entrezgene_id.symbol[good_results_symbol$ensembl_gene_id.sym
 good_results_symbol$entrezgene_id.symbol[good_results_symbol$ensembl_gene_id.symbol == "ENSG00000211673"] <- 28809
 good_results_symbol$entrezgene_id.symbol[good_results_symbol$ensembl_gene_id.symbol == "ENSG00000224078"] <- 104472715
 
+
+
 output_manifest5 <- good_results_symbol %>%
   dplyr::select(PROBE_ID = PROBE_ID.x, GENE_SYMBOL = GENE_SYMBOL.x, ENSEMBL_GENE_ID=ensembl_gene_id.symbol, ENTREZ_ID = entrezgene_id.symbol, LIGATED_SEQUENCE = LIGATED_SEQUENCE.x, ALIGNED_REFSEQ_TRANSCRIPTS = ALIGNED_REFSEQ_TRANSCRIPTS.x) %>%
   unique() %>%
   bind_rows(output_manifest4)
+
+# clean up a couple of duplicates
+output_manifest5 <- output_manifest5 %>% filter(!(PROBE_ID %in% c(3802,3803,29030,29032) & is.na(ENSEMBL_GENE_ID)))
 
 check_data_unique(output_manifest5)
 

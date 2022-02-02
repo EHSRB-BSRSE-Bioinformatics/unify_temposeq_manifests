@@ -170,6 +170,9 @@ output_manifest3 <- manual_corrections %>%
   dplyr::select(Probe.ID, Gene.Symbol = correct_gene_symbol, ENSEMBL.Gene.ID = ensembl_id, Entrez.ID = ncbi_id, Probe.Sequence) %>%
   bind_rows(output_manifest2)
 
+check_data_unique(output_manifest3)
+
+
 #####################################################################################################################
 
 
@@ -181,10 +184,93 @@ remaining3 <- manifest %>%
   inner_join(manifest)
 
 
+# ok, some of the transcripts are ensembl transcript IDs (for some reason...), so check that
 
-output_manifest_final <- remaining3 %>%
+ensembl_and_entrez_by_enst <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position','refseq_mrna','ensembl_transcript_id'),
+                                          filters = c('ensembl_transcript_id'),
+                                          values = remaining3$Reference.Transcript,
+                                          mart = ensembl)
+
+
+output_manifest4 <- ensembl_and_entrez_by_enst %>%
+  left_join(remaining3, by=c('ensembl_transcript_id' = 'Reference.Transcript')) %>%
+  dplyr::select(Probe.ID, Gene.Symbol = external_gene_name, ENSEMBL.Gene.ID = ensembl_gene_id, Entrez.ID = entrezgene_id, Probe.Sequence) %>%
+  bind_rows(output_manifest3)
+
+check_data_unique(output_manifest4)
+
+#####################################################################################################################
+# start searching by gene name
+
+remaining4 <- manifest %>%
+  dplyr::select(Probe.ID) %>%
+  left_join(output_manifest4, by="Probe.ID") %>%
+  filter(is.na(Entrez.ID) & is.na(ENSEMBL.Gene.ID)) %>%
+  dplyr::select(Probe.ID) %>%
+  inner_join(manifest)
+
+
+ensembl_and_entrez_by_gene_name <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position','refseq_mrna','ensembl_transcript_id'),
+                                    filters = c('external_gene_name'),
+                                    values = remaining4$Gene.Symbol,
+                                    mart = ensembl)
+
+single_chr_4 <- ensembl_and_entrez_by_gene_name %>%
+  group_by(external_gene_name) %>%
+  arrange(chromosome_name, by_group=TRUE) %>%
+  slice_head(n=1) %>%
+  ungroup()
+
+
+output_manifest5 <- single_chr_4 %>%
+  left_join(remaining4, by=c('external_gene_name' = 'Gene.Symbol')) %>%
+  dplyr::select(Probe.ID, Gene.Symbol = external_gene_name, ENSEMBL.Gene.ID = ensembl_gene_id, Entrez.ID = entrezgene_id, Probe.Sequence) %>%
+  distinct() %>%
+  bind_rows(output_manifest4)
+
+check_data_unique(output_manifest5)
+
+#####################################################################################################################
+
+# I suspect a lot of these are older gene names, so check by synonyms again. This time we'll manually double-check the results
+
+remaining5 <- manifest %>%
+  dplyr::select(Probe.ID) %>%
+  left_join(output_manifest5, by="Probe.ID") %>%
+  filter(is.na(Entrez.ID) & is.na(ENSEMBL.Gene.ID)) %>%
+  dplyr::select(Probe.ID) %>%
+  inner_join(manifest)
+
+ensembl_and_entrez_by_synonym <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position','refseq_mrna','ensembl_transcript_id','external_synonym'),
+                                         filters = c('external_synonym'),
+                                         values = remaining5$Gene.Symbol,
+                                         mart = ensembl)
+single_chr_5 <- ensembl_and_entrez_by_synonym %>%
+  group_by(external_gene_name) %>%
+  arrange(chromosome_name, by_group=TRUE) %>%
+  slice_head(n=1) %>%
+  ungroup()
+
+
+output_manifest6 <- single_chr_5 %>%
+  left_join(remaining5, by=c('external_synonym' = 'Gene.Symbol')) %>%
+  filter(!(Probe.ID %in% c("HIST1H2AK_20840", "HIST2H2AA4_2963", "HIST2H2AA4_2964", "H2AFV_28424"))) %>%
+  dplyr::select(Probe.ID, Gene.Symbol = external_gene_name, ENSEMBL.Gene.ID = ensembl_gene_id, Entrez.ID = entrezgene_id, Probe.Sequence) %>%
+  distinct() %>%
+  bind_rows(output_manifest5)
+
+check_data_unique(output_manifest6)
+
+
+#####################################################################################################################
+
+output_manifest_final <- manifest %>%
+  left_join(output_manifest6, by=c("Probe.ID"), suffix=(c('','.o'))) %>%
+  filter(is.na(Gene.Symbol.o )) %>%
+  dplyr::select(Probe.ID) %>%
+  left_join(manifest) %>%
   dplyr::select(Probe.ID, Gene.Symbol, Probe.Sequence) %>%
-  bind_rows(output_manifest3) %>%
+  bind_rows(output_manifest6) %>%
   mutate(Probe.Name = paste0(Gene.Symbol, "_", Probe.ID)) %>%
   inner_join(manifest, by="Probe.ID") 
 
