@@ -438,17 +438,21 @@ remaining3$Entrez.ID[remaining3$Gene.Symbol == "XR"] <- 317705
 
 output_manifest_final <- remaining3 %>%
   dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence) %>%
-  bind_rows(output_manifest5) %>%
-  left_join(manifest %>% dplyr::select(Probe.ID, Transcripts.Covered)) 
+  bind_rows(output_manifest5 %>% dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence)) %>%
+  left_join(manifest %>% dplyr::select(Probe.ID, Transcripts.Covered, Probe.Name))
 
 check_data_unique(output_manifest_final)
 
 output_manifest_formatted <- output_manifest_final %>%
-  mutate(Probe_Name = paste0(Gene.Symbol, "_", Probe.ID), Probe_ID = as.integer(Probe.ID)) %>%
-  dplyr::select(Probe_ID, Probe_Name, Gene_Symbol = Gene.Symbol, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence, Transcripts_Targeted = Transcripts.Covered) %>%
+  mutate(Probe_ID = as.integer(Probe.ID)) %>%
+  dplyr::select(Probe_ID, Probe_Name = Probe.Name, Gene_Symbol = Gene.Symbol, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence, Transcripts_Targeted = Transcripts.Covered) %>%
   arrange(Probe_ID)
   
-  
+stopifnot(all(output_manifest_formatted$Probe_ID %in% manifest$Probe.ID))
+stopifnot(all(output_manifest_formatted$Probe_Name %in% manifest$Probe.Name))
+stopifnot(all(manifest$Probe.ID %in% output_manifest_formatted$Probe_ID))
+stopifnot(all(manifest$Probe.Name %in% output_manifest_formatted$Probe_Name))
+
   
 output_file <- file.path(output_directory, output_filename)
 

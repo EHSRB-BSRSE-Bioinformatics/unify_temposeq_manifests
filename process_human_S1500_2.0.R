@@ -396,14 +396,20 @@ remaining3$ENTREZ_ID[remaining3$GENE_SYMBOL == "TRBC2"] <- 28638
 
 output_manifest_final <- remaining3 %>%
   dplyr::select(PROBE_ID, GENE_SYMBOL, ENSEMBL_GENE_ID, ENTREZ_ID, LIGATED_SEQUENCE, ALIGNED_REFSEQ_TRANSCRIPTS) %>%
-  bind_rows(output_manifest6)
+  bind_rows(output_manifest6) %>%
+  inner_join(manifest %>% dplyr::select(PROBE_ID,PROBE_NAME))
 
 check_data_unique(output_manifest_final)
 
 output_manifest_formatted <- output_manifest_final %>%
-  mutate(Probe_Name = paste0(GENE_SYMBOL, "_", PROBE_ID)) %>%
-  dplyr::select(Probe_ID = PROBE_ID, Probe_Name, Gene_Symbol = GENE_SYMBOL, Ensembl_Gene_ID = ENSEMBL_GENE_ID, Entrez_ID = ENTREZ_ID, Probe_Sequence = LIGATED_SEQUENCE, Transcripts_Targeted = ALIGNED_REFSEQ_TRANSCRIPTS) %>%
+  dplyr::select(Probe_ID = PROBE_ID, Probe_Name = PROBE_NAME, Gene_Symbol = GENE_SYMBOL, Ensembl_Gene_ID = ENSEMBL_GENE_ID, Entrez_ID = ENTREZ_ID, Probe_Sequence = LIGATED_SEQUENCE, Transcripts_Targeted = ALIGNED_REFSEQ_TRANSCRIPTS) %>%
   arrange(Probe_ID)
+
+stopifnot(all(output_manifest_formatted$Probe_ID %in% manifest$PROBE_ID))
+stopifnot(all(output_manifest_formatted$Probe_Name %in% manifest$PROBE_NAME))
+stopifnot(all(manifest$PROBE_ID %in% output_manifest_formatted$Probe_ID))
+stopifnot(all(manifest$PROBE_NAME %in% output_manifest_formatted$Probe_Name))
+
 
 
 output_file <- file.path(output_directory, output_filename)

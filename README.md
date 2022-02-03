@@ -1,6 +1,11 @@
 # unify_temposeq_manifests
 Code to standarize the format of the TempO-Seq probe manifests and fill in any missing ID values where possible
 
+Output files consist of Probe ID, Probe Name, Gene Symbol, Ensembl ID, Entrez (NCBI) ID, Probe Sequence, and Targeted Transcripts.
+Note that the Probe Name consists of the Probe ID + Gene Symbol, *but* it is not modified from BioSpyder's original IDs, whereas the gene symbols have occasionally been updated and those updates are captured in this manifest.
+
+Cases where the Ensembl/NCBI ID are missing include genes that have been withdrawn from repositories, and cases where it was unclear precisely which gene is being targeted.
+
 
 ## Stats
 

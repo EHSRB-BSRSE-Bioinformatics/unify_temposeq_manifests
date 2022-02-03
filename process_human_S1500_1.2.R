@@ -269,16 +269,21 @@ output_manifest_final <- manifest %>%
   filter(is.na(Gene.Symbol.o )) %>%
   dplyr::select(Probe.ID) %>%
   left_join(manifest) %>%
-  dplyr::select(Probe.ID, Gene.Symbol, Probe.Sequence) %>%
+  dplyr::select(Probe.ID, Gene.Symbol, Probe.Sequence, Probe.Name) %>%
   bind_rows(output_manifest6) %>%
-  mutate(Probe.Name = paste0(Gene.Symbol, "_", Probe.ID)) %>%
-  inner_join(manifest, by="Probe.ID") 
+  inner_join(manifest, by=c("Probe.ID", "Probe.Sequence")) %>%
+  dplyr::select(Probe.ID, Gene.Symbol.x, Probe.Name.y, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence, Reference.Transcript, Transcripts.Targeted)
 
 check_data_unique(output_manifest_final)
 
 output_manifest_formatted <- output_manifest_final %>%
-  dplyr::select(Probe_ID = Probe.ID, Probe_Name = Probe.Name.x, Gene_Symbol = Gene.Symbol.x, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence.x, Transcripts_Targeted = Transcripts.Targeted) %>%
+  dplyr::select(Probe_ID = Probe.ID, Probe_Name = Probe.Name.y, Gene_Symbol = Gene.Symbol.x, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence, Transcripts_Targeted = Transcripts.Targeted) %>%
   arrange(Probe_ID)
+
+stopifnot(all(output_manifest_formatted$Probe_ID %in% manifest$Probe.ID))
+stopifnot(all(output_manifest_formatted$Probe_Name %in% manifest$Probe.Name))
+stopifnot(all(manifest$Probe.ID %in% output_manifest_formatted$Probe_ID))
+stopifnot(all(manifest$Probe.Name %in% output_manifest_formatted$Probe_Name))
 
 output_file <- file.path(output_directory, output_filename)
 
