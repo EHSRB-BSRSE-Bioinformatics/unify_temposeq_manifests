@@ -472,6 +472,7 @@ matched_by_gene_name$ENSEMBL.Gene.ID <- pmin(matched_by_gene_name$ENSEMBL.Gene.I
 # Next we are going to take the remaining probes and use BLAT against a set of human mRNAs
 # Start the server outside of R using
 #  ~/bin/gfServer start 127.0.0.1 1234 -stepSize=5 /home/katecook/Documents/HC_EHSRB/data/genomes/GRCh38_latest_rna.2bit
+#/home/bradford/storage/ucsc-utils/blat/gfServer start 127.0.0.1 1234 -stepSize=5 -canStop /home/bradford/storage/dbs/GRCh38/GRCh38_latest_rna.2bit
 
 fasta_file <- "/tmp/probe_sequences.fa"
 
@@ -479,7 +480,8 @@ write.fasta(as.list(remaining2$Probe.Sequence), remaining2$Probe.Name, fasta_fil
 
 alignment_file <- "/tmp/out.psl"
 
-system(paste("~/bin/gfClient -minScore=20 -minIdentity=0 127.0.0.1 1234 ~/Documents/HC_EHSRB/data/genomes/",fasta_file,alignment_file))
+#system(paste("~/bin/gfClient -minScore=20 -minIdentity=0 127.0.0.1 1234 ~/Documents/HC_EHSRB/data/genomes/",fasta_file,alignment_file))
+system(paste("/home/bradford/storage/ucsc-utils/blat/gfClient -minScore=20 -minIdentity=0 127.0.0.1 1234 /home/bradford/storage/dbs/GRCh38/",fasta_file,alignment_file))
 
 alignments <- read.table(alignment_file, header=FALSE, sep='\t', skip=5)
 
@@ -510,10 +512,21 @@ ensembl_for_refseq <- ensembl_for_refseq %>%
   slice_head(n=1) %>%
   ungroup()
 
+
+
 matched_by_sequence <- refseq_matches %>%
   left_join(ensembl_for_refseq, by=c("refseq" = "refseq_mrna")) %>%
   inner_join(remaining2, by=c("Q_name" = "Probe.Name")) %>% 
-  dplyr::rename("Probe.Name" = "Q_name") %>%
+  dplyr::rename("Probe.Name" = "Q_name") 
+
+# Rows with ensemble_gene_ids have non-matching external_gene_name and Gene.Symbol
+#Some of the gene.symbols are just accessions, or uncharacterized loci. 
+#When I search the ensembls, the results match the external_gene_name, 
+# so let's overwrite the Gene.Symbol with that.
+
+matched_by_sequence <- matched_by_sequence %>% 
+  mutate(Gene.Symbol = ifelse(Gene.Symbol != external_gene_name & !is.na(external_gene_name),
+                              external_gene_name, Gene.Symbol)) %>%
   filter(is.na(external_gene_name) | external_gene_name == Gene.Symbol) %>%
   filter(is.na(chromosome_name) | is.na(probe_chrom) | chromosome_name == probe_chrom) %>%
   filter(!is.na(ensembl_gene_id))
