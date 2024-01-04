@@ -73,7 +73,7 @@ manifest <- manifest %>%
 
 # Remove index number column
 manifest <- manifest %>%
-  select(-X)
+  dplyr::select(-X)
 
 manifest$Entrez.ID <- as.integer(manifest$Entrez.ID)
 manifest <- manifest %>% separate(Probe.Genomic.Coordinates,sep='[:-]',into=c('probe_chrom','probe_start','probe_end', NA))
@@ -90,19 +90,27 @@ output_directory <- "output_manifests"
 output_filename <- "Human_Whole_Transcriptome_2.1_standardized.csv"
 
 #####################################################################################################################
+# Count missing info in original manifest
 
-# Check: any rows missing Ensembl IDs?
+# Missing enseml
 manifest %>% filter(ENSEMBL.Gene.ID == "" | ENSEMBL.Gene.ID == "NA") %>% 
   summarise(n = n())
 
+# Missing Entrez
+manifest %>% filter(is.na(Entrez.ID)) %>% 
+  summarise(n = n())
+
+# Missing both Ensembl IDs and Entrez IDs?
+manifest %>% filter((ENSEMBL.Gene.ID == "") & is.na(Entrez.ID)) %>% 
+  summarise(n = n())
+
+
+#####################################################################################################################
+# Probes with entrez IDs but not ensembl
 
 missing_ensembl_with_entrez <- manifest %>%
   filter((ENSEMBL.Gene.ID == "") & !is.na(Entrez.ID))
 
-# Any rows missing both Ensembl IDs and Entrez IDs?
-manifest %>% filter((ENSEMBL.Gene.ID == "") & is.na(Entrez.ID)) %>% 
-  summarise(n = n())
-# We'll deal with those later...
 
 ensembl_for_missing <- getBM(attributes = 
                                c('entrezgene_id',
@@ -121,7 +129,7 @@ entrez_matched <- missing_ensembl_with_entrez %>%
 
 # find rows that need manual(ish) fixing
 gene_name_mismatched1 <- entrez_matched[entrez_matched$Gene.Symbol != entrez_matched$external_gene_name,] %>% 
-  select(c(Probe.ID,Gene.Symbol, external_gene_name))
+  dplyr::select(c(Probe.ID,Gene.Symbol, external_gene_name))
 
 # For all row names with non-matching Gene Symbol and external gene name,
 # If there's an external gene name, replace Gene Symbol with that
@@ -144,7 +152,7 @@ entrez_matched <- entrez_matched %>%
 check_n_matches <- entrez_matched %>% group_by(Probe.ID) %>% mutate(n_copies = n())
 
 check_n_matches %>% dplyr::filter(n_copies > 1) %>% 
-  select(c(Gene.Symbol,
+  dplyr::select(c(Gene.Symbol,
            Probe.Name,
            probe_chrom,
            Entrez.ID,
@@ -193,11 +201,6 @@ check_data_unique(output_manifest1)
 
 # now probes  with Ensembl IDs but missing Entrez IDs
 
-# Any rows missing Entrez IDs?
-manifest %>% filter(is.na(Entrez.ID)) %>% 
-  summarise(n = n())
-# Yes, 886 rows missing Entrez IDs
-
 missing_entrez_with_ensembl <- manifest %>%
   filter(is.na(Entrez.ID) & !is.na(ENSEMBL.Gene.ID)) 
 
@@ -217,6 +220,7 @@ entrez_for_missing <- getBM(attributes = c('entrezgene_id',
 ensembl_matched <- missing_entrez_with_ensembl %>%
   inner_join(entrez_for_missing, by=c("ENSEMBL.Gene.ID" = "ensembl_gene_id"))
 
+# Comment from Kate's wt2.0 code:
 # there seem to be some ensembl genes that match to multiple entrez IDs, but spot checking a few 
 # suggests that the larger number is a read-through gene in most cases, so assume that
 # the smaller entrez ID is the one we want
@@ -227,7 +231,7 @@ ensembl_matched <- ensembl_matched %>%
 
 # Find rows that need to be manually (ish) fixed
 ensembl_matched_to_fix_manually <- ensembl_matched[ensembl_matched$Gene.Symbol != ensembl_matched$external_gene_name,] %>% 
-  select(c(Probe.ID,Gene.Symbol, external_gene_name))
+  dplyr::select(c(Probe.ID,Gene.Symbol, external_gene_name))
 
 # For all row names with non-matching Gene Symbol and external gene name,
 # If there's an external gene name (ensembl symbol), replace Gene Symbol with that
@@ -248,7 +252,7 @@ ensembl_matched <- ensembl_matched %>%
 
 # Find rows where probe chrom and chromosome name don't match
 ensembl_matched[ensembl_matched$probe_chrom != ensembl_matched$chromosome_name,] %>% 
-  select(c(Probe.ID,probe_chrom, chromosome_name))
+  dplyr::select(c(Probe.ID,probe_chrom, chromosome_name))
 
 # All rows with long chromosome_names, the prob_chrom is the same except with CHR_ prepended. Ex.
 #Probe.ID probe_chrom                 chromosome_name              
@@ -384,11 +388,29 @@ get_gene_info_from_ncbi_using_entrez <- function(Entrez.ID){
 
 ensembl_results <- bind_rows(lapply(remaining_missing_ensembl$Entrez.ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
 
-# two measly genes, argh
 entrez_matched <- remaining_missing_ensembl %>%
   inner_join(ensembl_results, by=c("Entrez.ID"))
+
+
 # error checking
 
+# Two of the probe rows are duplicated, and I can't see any difference between them.
+# collapse duplicates
+
+entrez_matched <- entrez_matched %>% dplyr::distinct()
+
+#Fix non-matching Gene.Symbol.X and Gene.Symbol.y
+entrez_matched$Gene.Symbol.x[entrez_matched$Probe.ID == "28402"] <- "DPH5-DT"
+
+#Fix non-matching probe_chrom vs entrez_chromosome
+#entrez_chromosome are numbers, probe_chrom are scaffolds (ex. CHR_HSCHR6_MHC_COX_CTG1)
+#going with the numbers
+
+entrez_matched <- entrez_matched %>% 
+  mutate(probe_chrom = ifelse(probe_chrom != entrez_chromosome,
+                              entrez_chromosome, probe_chrom))
+
+# error checking
 stopifnot(all(entrez_matched$Gene.Symbol.x == entrez_matched$Gene.Symbol.y))
 stopifnot(all(entrez_matched$probe_chrom == entrez_matched$entrez_chromosome))
 
@@ -402,12 +424,31 @@ check_data_unique(output_manifest4)
 
 #####################################################################################################################
 
+# Remaining to fix: have either ensembl ID OR entrez ID, but not both
+
 remaining2 <- manifest %>%
   dplyr::select(Probe.ID) %>%
   left_join(output_manifest4) %>%
   filter(is.na(Entrez.ID) | is.na(ENSEMBL.Gene.ID)) %>%
   dplyr::select(Probe.ID) %>%
   inner_join(manifest)
+
+#####################################################################################################################
+# Count missing info now, before we get too fancy
+
+# Missing enseml
+remaining2 %>% filter(ENSEMBL.Gene.ID == "" | ENSEMBL.Gene.ID == "NA") %>% 
+  summarise(n = n())
+
+# Missing Entrez
+remaining2 %>% filter(is.na(Entrez.ID)) %>% 
+  summarise(n = n())
+
+# Missing both Ensembl IDs and Entrez IDs?
+remaining2 %>% filter((ENSEMBL.Gene.ID == "") & is.na(Entrez.ID)) %>% 
+  summarise(n = n())
+
+#####################################################################################################################
 
 # OK, before we start blasting things let's try with the gene names
 
