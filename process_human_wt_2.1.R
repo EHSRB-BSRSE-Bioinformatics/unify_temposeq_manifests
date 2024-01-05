@@ -202,7 +202,7 @@ check_data_unique(output_manifest1)
 # now probes  with Ensembl IDs but missing Entrez IDs
 
 missing_entrez_with_ensembl <- manifest %>%
-  filter(is.na(Entrez.ID) & !is.na(ENSEMBL.Gene.ID)) 
+  filter(is.na(Entrez.ID) & !is.na(ENSEMBL.Gene.ID) & ENSEMBL.Gene.ID != "") 
 
 entrez_for_missing <- getBM(attributes = c('entrezgene_id',
                                            'ensembl_gene_id',
@@ -429,7 +429,7 @@ check_data_unique(output_manifest4)
 remaining2 <- manifest %>%
   dplyr::select(Probe.ID) %>%
   left_join(output_manifest4) %>%
-  filter(is.na(Entrez.ID) | is.na(ENSEMBL.Gene.ID)) %>%
+  filter(is.na(Entrez.ID) | is.na(ENSEMBL.Gene.ID) | ENSEMBL.Gene.ID == "" ) %>%
   dplyr::select(Probe.ID) %>%
   inner_join(manifest)
 
@@ -543,6 +543,9 @@ good_results <- matched_by_gene_name %>%
   left_join(matched_by_sequence, by = c("Probe.Name", "Probe.ID", "Gene.Symbol", "Probe.Sequence", "ENSEMBL.Gene.ID", "Entrez.ID"), suffix=c(".seq", ".symbol")) %>%
   filter(!is.na(Entrez.ID))
 
+good_results <- good_results %>% 
+  mutate(ENSEMBL.Gene.ID = ensembl_gene_id.seq)
+
 output_manifest5 <- good_results %>%
   dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence) %>%
   unique() %>%
@@ -553,87 +556,82 @@ check_data_unique(output_manifest5)
 
 #####################################################################################################################
 
-# fill in the rest manually
-
+# Remaining missing
 remaining3 <- manifest %>%
   dplyr::select(Probe.ID) %>%
   left_join(output_manifest5) %>%
-  filter(is.na(Entrez.ID) | is.na(ENSEMBL.Gene.ID)) %>%
+  filter(is.na(Entrez.ID) | is.na(ENSEMBL.Gene.ID) | ENSEMBL.Gene.ID == "") %>%
   dplyr::select(Probe.ID) %>%
   inner_join(manifest)
 
-# update entrez IDs
-remaining3$Entrez.ID[remaining3$ENSEMBL.Gene.ID == "ENSG00000282801"] <- 28299
 
-# update ensembl IDs
-remaining3$Gene.Symbol[remaining3$Probe.Name == "LINC01279_28403"] <- "CCDC80"
-remaining3$Entrez.ID[remaining3$Probe.Name == "LINC01279_28403"] <- 151887
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "LINC01279_28403"] <- "ENSG00000091986"
+# Check standardized hwt2.0 - are same probes missing info there?
 
-# both are missing, search using gene name or sequence...whatever works
+human_wt_2_0 <- read.csv("/home/bradford/storage/dbs/biospyder/Human_whole_transcriptome_2_0/Human_Whole_Transcriptome_2.0_standardized.csv")
 
-remaining3$ENSEMBL.Gene.ID[remaining3$Gene.Symbol == "ACTBP9"] <- "ENSG00000266920"
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "ACTBP9"] <- 69
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "ANKRD20A13P"] <- 100132733
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "BAGE5"] <- 85316
-remaining3$ENSEMBL.Gene.ID[remaining3$Gene.Symbol == "CTAGE8"] <- "ENSG00000289604"
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "CTAGE8"] <- 100142659
-remaining3$ENSEMBL.Gene.ID[remaining3$Gene.Symbol == "DDTL"] <- "ENSG00000099974"
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "DDTL"] <- 100037417
-remaining3$Gene.Symbol[remaining3$Probe.Name == "HIST1H3D_17823"] <- "H3C4"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "HIST1H3D_17823"] <- "ENSG00000197409"
-remaining3$Entrez.ID[remaining3$Probe.Name == "HIST1H3D_17823"] <- 8351
-remaining3$ENSEMBL.Gene.ID[remaining3$Gene.Symbol == "HLA-V"] <- "ENSG00000181126"
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "HLA-V"] <- 352962
-remaining3$ENSEMBL.Gene.ID[remaining3$Gene.Symbol == "HNRNPCL2"] <- "ENSG00000275774"
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "HNRNPCL2"] <- 440563
-remaining3$ENSEMBL.Gene.ID[remaining3$Gene.Symbol == "HSP90AA2P"] <- "ENSG00000224411"
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "HSP90AA2P"] <- 3324
-remaining3$Gene.Symbol[remaining3$Probe.Name == "IGHV3_28168"] <- "IGHV3-48"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "IGHV3_28168"] <- "ENSG00000211964"
-remaining3$Entrez.ID[remaining3$Probe.Name == "IGHV3_28168"] <- 28424
-remaining3$Gene.Symbol[remaining3$Probe.Name == "IGHV4_28203"] <- "IGHV4-59"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "IGHV4_28203"] <- "ENSG00000224373"
-remaining3$Entrez.ID[remaining3$Probe.Name == "IGHV4_28203"] <- 28392
-remaining3$Gene.Symbol[remaining3$Probe.Name == "IGKV1_28187"] <- "IGKV1-5"
-remaining3$Entrez.ID[remaining3$Probe.Name == "IGKV1_28187"] <- 28299
-remaining3$Gene.Symbol[remaining3$Probe.Name == "IGKV3D_28174"] <- "IGKV3D-11"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "IGKV3D_28174"] <- "ENSG00000211632"
-remaining3$Entrez.ID[remaining3$Probe.Name == "IGKV3D_28174"] <- 28876
-remaining3$Gene.Symbol[remaining3$Probe.Name == "IGLV1_28171"] <- "IGLV1-44"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "IGLV1_28171"] <- "ENSG00000211651"
-remaining3$Entrez.ID[remaining3$Probe.Name == "IGLV1_28171"] <- 28823
-remaining3$Gene.Symbol[remaining3$Probe.Name == "KJ904049_34049"] <- "TXLNGY"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "KJ904049_34049"] <- "ENSG00000131002"
-remaining3$Entrez.ID[remaining3$Probe.Name == "KJ904049_34049"] <- 246126
-#####################################################################
-# Not sure what to do with this one......bicistronic gene
-#####################################################################
-remaining3$Gene.Symbol[remaining3$Probe.Name == "LUZP6_19140"] <- "MTPN"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "LUZP6_19140"] <- "ENSG00000105887"
-remaining3$Entrez.ID[remaining3$Probe.Name == "LUZP6_19140"] <- 136319
-#####################################################################
-remaining3$Entrez.ID[remaining3$Probe.Name == "MGC70870_28188"] <- 403340
-remaining3$Entrez.ID[remaining3$Probe.Name == "PCDHGCT_34000"] <- 56118
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "PRAMEF33_14999"] <- "ENSG00000237700"
-remaining3$Entrez.ID[remaining3$Probe.Name == "PRAMEF33_14999"] <- 645382
-remaining3$Entrez.ID[remaining3$Probe.Name == "PRR21_17743"] <- 643905
-remaining3$Gene.Symbol[remaining3$Probe.Name == "SSX8_34034"] <- "SSX8P"
-remaining3$ENSEMBL.Gene.ID[remaining3$Probe.Name == "SSX8_34034"] <- "ENSG00000157965"
-remaining3$Entrez.ID[remaining3$Probe.Name == "SSX8_34034"] <- 280659
-remaining3$ENSEMBL.Gene.ID[remaining3$Gene.Symbol == "XR"] <- "ENSG00000197617"
-remaining3$Entrez.ID[remaining3$Gene.Symbol == "XR"] <- 317705
+hwt_2_0_matches <- human_wt_2_0 %>%
+                dplyr::select(Probe_Name,Ensembl_Gene_ID,Entrez_ID) %>%
+                dplyr::filter(Probe_Name %in% remaining3$Probe.Name)
 
-output_manifest_final <- remaining3 %>%
+rem3_2.0_matches <- remaining3 %>%
+  inner_join(hwt_2_0_matches, by=c("Probe.Name" = "Probe_Name"))
+
+# Take ensembl info from 2.0 if Entrez IDs match,
+# and Entrez info from 2.0 if ensembls match
+rem3_fixed <- rem3_2.0_matches %>% 
+  mutate(Entrez.ID = ifelse(ENSEMBL.Gene.ID == Ensembl_Gene_ID,
+                            Entrez_ID, Entrez.ID)) %>%
+  mutate(ENSEMBL.Gene.ID = ifelse(Entrez.ID == Entrez_ID,
+                                  Ensembl_Gene_ID, ENSEMBL.Gene.ID)) %>%
+  filter(!is.na(Entrez.ID) & !is.na(ENSEMBL.Gene.ID) & ENSEMBL.Gene.ID != "") %>%
+  dplyr::select(-c(Ensembl_Gene_ID, Entrez_ID))
+
+output_manifest6 <- rem3_fixed %>%
   dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence) %>%
-  bind_rows(output_manifest5 %>% dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence)) %>%
-  left_join(manifest %>% dplyr::select(Probe.ID, Transcripts.Covered, Probe.Name))
+  unique() %>%
+  bind_rows(output_manifest5)
+
+
+# error checking
+check_data_unique(output_manifest6)
+
+##########################################################################################################
+# Count unfixable probes
+
+remaining4 <- manifest %>%
+  dplyr::select(Probe.ID) %>%
+  left_join(output_manifest6) %>%
+  filter(is.na(Entrez.ID) | is.na(ENSEMBL.Gene.ID) | ENSEMBL.Gene.ID == "") %>%
+  dplyr::select(Probe.ID) %>%
+  inner_join(manifest)
+
+# Missing enseml only
+remaining4 %>% filter(ENSEMBL.Gene.ID == "" | ENSEMBL.Gene.ID == "NA") %>% 
+  filter(!is.na(Entrez.ID)) %>%
+  summarise(n = n())
+
+# Missing Entrez only
+remaining4 %>% filter(is.na(Entrez.ID)) %>% 
+  filter(ENSEMBL.Gene.ID != "" | is.na(ENSEMBL.Gene.ID)) %>%
+  summarise(n = n())
+
+# Missing both Ensembl IDs and Entrez IDs?
+remaining4 %>% filter((ENSEMBL.Gene.ID == "") & is.na(Entrez.ID)) %>% 
+  summarise(n = n())
+
+##########################################################################################################
+#Final manifest
+
+output_manifest_final <- remaining4 %>%
+  dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence) %>%
+  bind_rows(output_manifest6 %>% dplyr::select(Probe.ID, Gene.Symbol, ENSEMBL.Gene.ID, Entrez.ID, Probe.Sequence)) %>%
+  left_join(manifest %>% dplyr::select(Probe.ID, ALIGNED_ENSEMBL_TRANSCRIPTS, Probe.Name))
 
 check_data_unique(output_manifest_final)
 
 output_manifest_formatted <- output_manifest_final %>%
   mutate(Probe_ID = as.integer(Probe.ID)) %>%
-  dplyr::select(Probe_ID, Probe_Name = Probe.Name, Gene_Symbol = Gene.Symbol, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence, Transcripts_Targeted = Transcripts.Covered) %>%
+  dplyr::select(Probe_ID, Probe_Name = Probe.Name, Gene_Symbol = Gene.Symbol, Ensembl_Gene_ID = ENSEMBL.Gene.ID, Entrez_ID = Entrez.ID, Probe_Sequence = Probe.Sequence, Transcripts_Targeted = ALIGNED_ENSEMBL_TRANSCRIPTS) %>%
   arrange(Probe_ID)
   
 stopifnot(all(output_manifest_formatted$Probe_ID %in% manifest$Probe.ID))
