@@ -27,3 +27,8 @@ Before: 122 blank Ensembl IDs, 77 blank Entrez IDs
 
 After: 34 blank Ensembl IDs, 29 blank Entrez IDs
 
+### Human WT 2.1 (22533 total)
+
+Before: 154 blank Ensembl IDs, 867 blank Entrez IDs, 19 blank both Ensembl and Entrez IDs
+
+After: 12 blank Ensembl IDs, 11 blank Entrez IDs, 10 blank both Ensembl and Entrez IDs
