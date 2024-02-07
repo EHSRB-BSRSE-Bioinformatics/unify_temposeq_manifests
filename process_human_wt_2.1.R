@@ -92,19 +92,19 @@ output_filename <- "Human_Whole_Transcriptome_2.1_standardized.csv"
 #####################################################################################################################
 # Count missing info in original manifest
 
-# Missing enseml
+# Missing enseml only
 manifest %>% filter(ENSEMBL.Gene.ID == "" | ENSEMBL.Gene.ID == "NA") %>% 
+  filter(!is.na(Entrez.ID)) %>%
   summarise(n = n())
 
-# Missing Entrez
+# Missing Entrez only
 manifest %>% filter(is.na(Entrez.ID)) %>% 
+  filter(ENSEMBL.Gene.ID != "" | is.na(ENSEMBL.Gene.ID)) %>%
   summarise(n = n())
 
 # Missing both Ensembl IDs and Entrez IDs?
 manifest %>% filter((ENSEMBL.Gene.ID == "") & is.na(Entrez.ID)) %>% 
   summarise(n = n())
-
-
 #####################################################################################################################
 # Probes with entrez IDs but not ensembl
 
