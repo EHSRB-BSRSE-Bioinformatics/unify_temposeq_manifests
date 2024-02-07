@@ -18,6 +18,7 @@ library(annotate)
 library(seqinr)
 library(rentrez)
 library(stringr)
+library(XML)
 
 # prevents some weird biomaRt SSL errors, as per https://github.com/grimbough/biomaRt/issues/31
 # may not be necessary all of the time (I went weeks without needing it)
@@ -56,7 +57,7 @@ ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
 original_manifests_directory <- "original_manifests"
 
 #human_wt_2.0_file <- file.path(original_manifests_directory, "191004_Human_Whole_Transcriptome_2.0_Manifest.csv")
-human_wt_2.0_file <- file.path(original_manifests_directory, "190620 Human Whole Transcriptome 2.0 Manifest.csv")
+human_wt_2.0_file <- file.path(original_manifests_directory, "190620-Human-Whole-Transcriptome-2.0-Manifest.csv")
 
 manifest <- read.csv(human_wt_2.0_file)
 
@@ -94,11 +95,24 @@ entrez_matched <- missing_ensembl_with_entrez %>%
   inner_join(ensembl_for_missing, by=c("Entrez.ID" = "entrezgene_id")) %>%
   filter(probe_chrom == chromosome_name)
 
+# find rows that need manual fixing
+gene_name_mismatched <- entrez_matched[entrez_matched$Gene.Symbol != entrez_matched$external_gene_name,]
+
 # manually fix some problems 
 entrez_matched$Gene.Symbol[entrez_matched$Probe.ID == "2955"] <- "H2BC12" # updated gene symbol
 entrez_matched$Probe.Name[entrez_matched$Probe.ID == "2955"] <- "H2BC12" # updated gene symbol
 entrez_matched$Gene.Symbol[entrez_matched$Probe.ID == "10706"] <- "MARCHF4" # updated gene symbol
 entrez_matched$Probe.Name[entrez_matched$Probe.ID == "10706"] <- "MARCHF4" # updated gene symbol
+
+# more manual fixing as of Dec 2023
+entrez_matched$Gene.Symbol[entrez_matched$Probe.ID == "15445"] <- "CFAP90" # updated gene symbol
+entrez_matched$Probe.Name[entrez_matched$Probe.ID == "15445"] <- "CFAP90" # updated gene symbol
+entrez_matched$Gene.Symbol[entrez_matched$Probe.ID == "28181"] <- "ZNG1C" # updated gene symbol
+entrez_matched$Probe.Name[entrez_matched$Probe.ID == "28181"] <- "ZNG1C" # updated gene symbol
+
+# remove weird doubled row
+entrez_matched <- entrez_matched %>%
+  dplyr::filter(start_position != 18207961)
 
 # error checking
 
@@ -131,7 +145,10 @@ ensembl_matched <- missing_entrez_with_ensembl %>%
 # there seem to be some ensembl genes that match to multiple entrez IDs, but spot checking a few 
 # suggests that the larger number is a read-through gene in most cases, so assume that
 # the smaller entrez ID is the one we want
-# ensembl_matched <- ensembl_matched %>% group_by(ENSEMBL.Gene.ID) %>% slice_max(order_by = entrezgene_id, n=1) %>% ungroup()
+ensembl_matched <- ensembl_matched %>% group_by(ENSEMBL.Gene.ID) %>% slice_max(order_by = entrezgene_id, n=1) %>% ungroup()
+
+# Find rows that need to be manually fixed
+ensembl_matched[ensembl_matched$Gene.Symbol != ensembl_matched$external_gene_name,] %>% select(c(Probe.ID,Gene.Symbol, external_gene_name))
 
 # manually fix some problems (all "ACNNNNN" accessions for symbols--one has been assigned a gene symbol so
 # we'll use that, the rest don't have ensembl symbols so we'll force it to use the accession numbers)
@@ -139,10 +156,18 @@ ensembl_matched$Gene.Symbol[ensembl_matched$Probe.ID == "5295"] <- "PP7080"
 ensembl_matched$Gene.Symbol[ensembl_matched$Probe.ID == "12290"] <- "FOXL3"
 ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "18935"] <- "AL449403.2"
 ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "28481"] <- "AC007666.1"
-ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "29034"] <- "AC132008.2"
+#ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "29034"] <- "AC132008.2" #Not needed as of Dec 2023
 ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "88136"] <- "AC008687.4"
 ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "89032"] <- "AC008397.1"
 ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "89097"] <- "AL022312.1"
+
+# more manual fixing as of December 2023
+ensembl_matched$Gene.Symbol[ensembl_matched$Probe.ID == "88043"] <- "OR1R1P"
+ensembl_matched$Gene.Symbol[ensembl_matched$Probe.ID == "87777"] <- "FAM90A22"
+ensembl_matched$Gene.Symbol[ensembl_matched$Probe.ID == "87748"] <- "FAM90A10"
+ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "88172"] <- "AC093323.1"
+ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "16684"] <- "AC213203.1"
+ensembl_matched$external_gene_name[ensembl_matched$Probe.ID == "88151"] <- "AL135905.2"
 
 # error checking
 
@@ -193,16 +218,21 @@ entrez_results <- bind_rows(lapply(remaining_missing_entrez$ENSEMBL.Gene.ID, get
 ensembl_matched <- remaining_missing_entrez %>%
   inner_join(entrez_results, by=c("ENSEMBL.Gene.ID" = "ensembl_id"), suffix=c(".remaining", ".entrez"))
 
-# manual corrections
+#Add check Dec 2023
+# What needs manual fixing? 
+ensembl_matched[ensembl_matched$Gene.Symbol.remaining != ensembl_matched$Gene.Symbol.entrez,]
 
-ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "3844"] <- "LOC728554"
-ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "15246"] <- "LOC728554"
+# manual corrections
+#Commented out ones that don't need fixing as of Dec 2023
+
+#ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "3844"] <- "LOC728554"
+#ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "15246"] <- "LOC728554"
 ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "26933"] <- "SNHG28"
-ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "87748"] <- "FAM90A10"
-ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "87777"] <- "FAM90A22"
-ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "88043"] <- "OR1R1P"
-ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "88151"] <- "PTP4A1"
-ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "88172"] <- "LOC93622"
+#ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "87748"] <- "FAM90A10"
+#ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "87777"] <- "FAM90A22"
+#ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "88043"] <- "OR1R1P"
+#ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "88151"] <- "PTP4A1"
+#ensembl_matched$Gene.Symbol.remaining[ensembl_matched$Probe.ID == "88172"] <- "LOC93622"
 
 
 # error checking
