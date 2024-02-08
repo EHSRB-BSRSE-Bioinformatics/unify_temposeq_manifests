@@ -10,7 +10,7 @@
 ####################
 
 # Using the updated manifest available at https://ntp.niehs.nih.gov/ntp/research/areas/tox21/mouse_s1500_manifest_10182018.xlsx
-# Which have Entrez IDs for each probe
+# Which have Entrez IDs for most(!) probes (not quite all)
 
 # The main issue with this set is missing Ensembl IDs
 
@@ -24,6 +24,7 @@ library(annotate)
 library(seqinr)
 library(rentrez)
 library(stringr)
+library(XML)
 
 #################
 #Getting started#
@@ -36,7 +37,12 @@ mouse_s1500_1.2_file <- file.path(original_manifests_directory, "mouse_s1500_man
 
 manifest <- read.csv(mouse_s1500_1.2_file, sep=',')
 
-# First, do some data conversion
+# Set up output file
+output_directory <- "output_manifests"
+output_filename <- "Mouse_S1500_1-2_standardized.csv"
+
+
+# A bit of data conversion
 
 manifest[manifest == 'NULL'] <- NA
 
@@ -50,38 +56,123 @@ manifest <- manifest %>%
                 "Transcripts_Targeted" = "prelim_mouse_targeted_enst") %>%
   dplyr::select("Probe_ID","Probe_Name","Gene_Symbol","Entrez_ID","Probe_Sequence","Transcripts_Targeted")
 
-# Set up output file
-output_directory <- "output_manifests"
-output_filename <- "Mouse_S1500_1-2_standardized.csv"
+
 
 #####################################################################################################################
 
-# Get Ensembl IDs, since all rows have Entrez IDs
+# Get Ensembl IDs based on Entrez IDs
+
+# Discussed with Matt 08 Feb 2024: don't use external_gene_name, it's not applicable for mouse
+# Try using mgi_symbol
 
 ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
 
-ensembl_for_missing <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','chromosome_name','start_position','end_position'),
+ensembl_for_missing <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','mgi_symbol','chromosome_name','start_position','end_position'),
                              filters = 'entrezgene_id',
                              values = manifest$Entrez_ID,
                              mart = ensembl)
 
-# Find rows where manifest gene symbol and biomart gene name match
+# Filter for rows where manifest gene symbol and biomart gene name match
 # Mutate to title case, sometimes mismatch is just case sensitivity
 entrez_matched <- manifest %>%
   inner_join(ensembl_for_missing, by=c("Entrez_ID" = "entrezgene_id")) %>%
   mutate(Gene_Symbol = str_to_title(Gene_Symbol),
-         external_gene_name =  str_to_title(external_gene_name)) %>%
-  filter(Gene_Symbol == external_gene_name)
+         mgi_symbol =  str_to_title(mgi_symbol)) %>%
+  dplyr::filter(Gene_Symbol == mgi_symbol)
 
 # Find rows where manifest gene symbol and biomart gene name don't match
+# Will have to deal with these somehow
 symbol_mismatch <- manifest %>%
   inner_join(ensembl_for_missing, by=c("Entrez_ID" = "entrezgene_id")) %>%
-  mutate(Gene_Symbol = str_to_title(Gene_Symbol),
-         external_gene_name =  str_to_title(external_gene_name)) %>%
-  filter(Gene_Symbol != external_gene_name)
+  dplyr::mutate(Gene_Symbol = str_to_title(Gene_Symbol),
+                mgi_symbol =  str_to_title(mgi_symbol)) %>%
+  dplyr::filter(Gene_Symbol != mgi_symbol)
 
 nrow(symbol_mismatch)
 # 211 rows with mismatch
 
+# Deal with probes matching to multiple ensembl IDs
+# Just looked up the transcripts from manifest online, found ensembl ID from that
+ensembles_to_remove <- c("ENSMUSG00000107877")
+
+entrez_matched <- entrez_matched %>%
+  filter(!ensembl_gene_id %in% ensembles_to_remove)
+
+# Checks
 check_n_matches <- entrez_matched %>% group_by(Probe_ID) %>% mutate(n_copies = n())
-check_n_matches %>% filter(n_copies > 1)
+duplicate_rows <- check_n_matches %>% filter(n_copies > 1)
+stopifnot(check_n_matches %>% filter(n_copies > 1) %>% nrow() == 0)
+
+output_manifest1 <- entrez_matched %>%
+  dplyr::select("Probe_ID","Probe_Name","Gene_Symbol","ensembl_gene_id","Entrez_ID","Probe_Sequence","Transcripts_Targeted")
+
+###########################################################################################################
+# Deal with remaining probes
+# Found ensembl but gene symbol and external_gene_name don't match
+# Or didn't find ensembl at all because no Entrez IDs
+# Or didn't find ensembl for mystery reasons (fun!)
+
+remaining <- manifest %>%
+  dplyr::filter(! Probe_ID %in% output_manifest1$Probe_ID)
+
+remaining_noentrez <- remaining %>%
+  dplyr::filter(is.na(Entrez_ID))
+
+remaining_other <- remaining %>%
+  dplyr::filter(!is.na(Entrez_ID)) %>%
+  dplyr::filter(! Probe_ID %in% symbol_mismatch$Probe_ID)
+
+# Search NCBI using entrez for those that have it
+
+
+# Function stolen from Kate's process_human_S1500_2.0.R
+get_gene_info_from_ncbi_using_entrez <- function(entrez_id){
+  fetch_result <- entrez_fetch(db="gene",id=entrez_id, rettype="xml", parsed=TRUE)
+  fetch_list <- xmlToList(fetch_result)
+  dbtags <- fetch_list$Entrezgene$Entrezgene_gene[["Gene-ref"]][["Gene-ref_db"]]
+  external_array <- as.vector(as.matrix(as.data.frame(dbtags)))
+  if(length(external_array)>2){
+    external_dbs <- external_array[seq(1, length(external_array), 2)]
+    external_ids <- external_array[seq(2, length(external_array), 2)]
+    external_data <- data.frame(db=external_dbs, id=external_ids)
+    ensembl_id <- external_data %>% filter(db=="Ensembl") %>% dplyr::select(id)
+  } else {
+    ensembl_id = NA
+  }
+  entrez_chromosome <- fetch_list$Entrezgene$Entrezgene_source$BioSource$BioSource_subtype$SubSource$SubSource_name
+  gene_symbol <- fetch_list$Entrezgene$Entrezgene_gene[["Gene-ref"]][["Gene-ref_locus"]]
+  
+  gene.df <- data.frame(entrez_id="",ensembl_id="",gene_symbol="",entrez_chromosome="") 
+  gene.df$entrez_id <- entrez_id
+  gene.df$ensembl_id <- ifelse(length(ensembl_id)>0, ensembl_id, NA)
+  gene.df$gene_symbol <- gene_symbol
+  gene.df$entrez_chromosome <- entrez_chromosome
+  return(gene.df)
+}
+
+
+# Have to split up into groups to avoid HTTP 400 timeout error (ugh)
+
+remaining_wentrez10 <- remaining %>%
+  dplyr::filter(!is.na(Entrez_ID)) %>%
+  dplyr::slice(1:10)
+
+remaining_wentrez20 <- remaining %>%
+  dplyr::filter(!is.na(Entrez_ID)) %>%
+  dplyr::slice(11:20)
+
+
+ensembl_results10 <- bind_rows(lapply(remaining_wentrez10$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
+
+ensembl_results20 <- bind_rows(lapply(remaining_wentrez20$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
+
+ensemble_results_other <- bind_rows(lapply(remaining_other$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
+
+
+# Gene symbol found by NCBI matches gene symbol from biomart, but not manifest
+# What to do with this? Should I just accept the external_gene_name?
+# Pretty sure that's what was done in previous manifest standardization
+# But then probe name and gene symbol won't match
+symbol_mismatch %>% 
+  inner_join(ensembl_results10, by = c("Entrez_ID" = "entrez_id")) %>%
+  dplyr::select(Probe_Name, Gene_Symbol, external_gene_name, gene_symbol)
