@@ -210,37 +210,56 @@ check_data_unique(output_manifest2)
 
 ###########################################################################################################
 
-
-# Deal with remaining probes
-
 remaining2 <- manifest %>%
   dplyr::filter(! Probe_ID %in% output_manifest2$Probe_ID)
 
+# Search biomart by gene symbols
 
+by_gene_name <- getBM(attributes = c('entrezgene_id',
+                                     'ensembl_gene_id',
+                                     'external_gene_name',
+                                     'mgi_symbol',
+                                     'chromosome_name',
+                                     'start_position',
+                                     'end_position'),
+                      filters = 'mgi_symbol',
+                      values = remaining2$Gene_Symbol,
+                      mart = ensembl)
+
+by_gene_name_singles <- by_gene_name %>%
+  group_by(external_gene_name) %>%
+  mutate(num_results = n())
+by_gene_name_singles <- by_gene_name_singles %>% filter(num_results == 1)
+
+matched_by_gene_name <- remaining2 %>%
+  inner_join(by_gene_name_singles, by=c('Gene_Symbol' = 'mgi_symbol'))
+
+# Entrez IDs don't match, but I'm suspicious of some of the entrez IDs that came from NIH anyway
+# And in a few spot look-ups of the transcripts targeted, they match the ensembl ID found by biomart
+
+output_manifest3 <- matched_by_gene_name %>%
+  dplyr::select("Probe_ID",
+                "Probe_Name",
+                "Gene_Symbol",
+                "ensembl_gene_id",
+                "Entrez_ID",
+                "Probe_Sequence",
+                "Transcripts_Targeted") %>%
+  bind_rows(output_manifest2)
+
+check_data_unique(output_manifest3)
 
 ###############################################################################################################
+
+remaining3 <- manifest %>%
+  dplyr::filter(! Probe_ID %in% output_manifest3$Probe_ID)
+
+
 # Search NCBI using entrez for those that have it
 
 remaining2wentrez <- remaining2 %>%
   dplyr::filter(! is.na(Entrez_ID))
 
-# Have to split up into groups to avoid HTTP 400 timeout error (ugh)
-
-remaining2_wentrez1to25 <- remaining2wentrez %>%
-  dplyr::slice(1:25)
-
-remaining2_wentrez20 <- remaining %>%
-  dplyr::filter(!is.na(Entrez_ID)) %>%
-  dplyr::slice(101:20)
-
-
-ensembl_results10 <- bind_rows(lapply(remaining_wentrez10$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
-
-ensembl_results20 <- bind_rows(lapply(remaining_wentrez20$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
-
-ensemble_results_other <- bind_rows(lapply(remaining_other$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
-
-ncbi_results1to30 <- bind_rows(lapply(remaining2_wentrez1to25$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
 
 ncbi_results <- bind_rows(lapply(remaining2wentrez$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
 
