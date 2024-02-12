@@ -60,17 +60,69 @@ manifest <- manifest %>%
 
 #####################################################################################################################
 
+# Search for ensembl gene IDs using ensembl transcript IDs
+
+ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
+
+ensembl_from_transcript <- getBM(attributes = c('entrezgene_id',
+                                            'ensembl_gene_id',
+                                            'external_gene_name',
+                                            'mgi_symbol',
+                                            'chromosome_name',
+                                            'start_position',
+                                            'end_position'),
+                             filters = 'ensembl_transcript_id',
+                             values = manifest$Transcripts_Targeted,
+                             mart = ensembl)
+
+
+embltr_matched <- manifest %>%
+  inner_join(ensembl_from_transcript, by=c("Gene_Symbol" = "mgi_symbol")) %>%
+  filter(Entrez_ID == entrezgene_id)
+
+# Without filtering for Entrez_ID == entrezgene_id, some probes get duplicate rows
+# All duplicate rows are identical, except that biomart found 2 Entrez IDs.
+# From looking online, both Entrez do indeed match to the same ensembl ID.
+# Which is a pain!
+# So I'm taking the entrezID that matches the one from NIH's fixed up manifest
+
+# Find duplicated rows
+check_n_matches <- embltr_matched %>% group_by(Probe_ID) %>% mutate(n_copies = n())
+duplicate_rows1 <- check_n_matches %>% filter(n_copies > 1)
+
+stopifnot(check_n_matches %>% filter(n_copies > 1) %>% nrow() == 0)
+
+output_manifest1 <- embltr_matched %>%
+  dplyr::select("Probe_ID",
+                "Probe_Name",
+                "Gene_Symbol",
+                "ensembl_gene_id",
+                "Entrez_ID",
+                "Probe_Sequence",
+                "Transcripts_Targeted")
+
+
+
+
+
 # Get Ensembl IDs based on Entrez IDs
 
 # Discussed with Matt 08 Feb 2024: don't use external_gene_name, it's not applicable for mouse
 # Try using mgi_symbol
 
-ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
 
-ensembl_for_missing <- getBM(attributes = c('entrezgene_id','ensembl_gene_id','external_gene_name','mgi_symbol','chromosome_name','start_position','end_position'),
+
+ensembl_for_missing <- getBM(attributes = c('entrezgene_id',
+                                            'ensembl_gene_id',
+                                            'external_gene_name',
+                                            'mgi_symbol',
+                                            'chromosome_name',
+                                            'start_position',
+                                            'end_position'),
                              filters = 'entrezgene_id',
                              values = manifest$Entrez_ID,
                              mart = ensembl)
+
 
 # Filter for rows where manifest gene symbol and biomart gene name match
 # Mutate to title case, sometimes mismatch is just case sensitivity
@@ -122,7 +174,13 @@ remaining_other <- remaining %>%
   dplyr::filter(!is.na(Entrez_ID)) %>%
   dplyr::filter(! Probe_ID %in% symbol_mismatch$Probe_ID)
 
+
+
+
 # Search NCBI using entrez for those that have it
+
+
+
 
 
 # Function stolen from Kate's process_human_S1500_2.0.R
@@ -176,3 +234,7 @@ ensemble_results_other <- bind_rows(lapply(remaining_other$Entrez_ID, get_gene_i
 symbol_mismatch %>% 
   inner_join(ensembl_results10, by = c("Entrez_ID" = "entrez_id")) %>%
   dplyr::select(Probe_Name, Gene_Symbol, external_gene_name, gene_symbol)
+
+
+
+
