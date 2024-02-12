@@ -25,6 +25,9 @@ library(seqinr)
 library(rentrez)
 library(stringr)
 library(XML)
+library(BiocManager)
+# Install if needed BiocManager::install("org.Mm.eg.db")
+library(org.Mm.eg.db)
 
 #################
 #Getting started#
@@ -254,10 +257,76 @@ check_data_unique(output_manifest3)
 remaining3 <- manifest %>%
   dplyr::filter(! Probe_ID %in% output_manifest3$Probe_ID)
 
+# I don't trust the entrez ID for some of them
+# So what if I look for the transcript-found ensembles without filtering for entrez ID matching?
 
-# Search NCBI using entrez for those that have it
+embltr_matched2 <- remaining3 %>%
+  inner_join(ensembl_from_transcript, by=c("Gene_Symbol" = "mgi_symbol")) %>%
+  dplyr::select(-c("entrezgene_id")) %>%
+  dplyr::distinct()
 
-remaining2wentrez <- remaining2 %>%
+# Woohoo, 5 more probes...
+output_manifest4 <- embltr_matched2 %>%
+  dplyr::select("Probe_ID",
+                "Probe_Name",
+                "Gene_Symbol",
+                "ensembl_gene_id",
+                "Entrez_ID",
+                "Probe_Sequence",
+                "Transcripts_Targeted") %>%
+  bind_rows(output_manifest3)
+
+check_data_unique(output_manifest4)
+
+###############################################################################################################
+
+remaining4 <- manifest %>%
+  dplyr::filter(! Probe_ID %in% output_manifest4$Probe_ID)
+
+# Use org.Mm.eg.db to find ensembl IDs from transcript IDs
+
+orgmmegdb_ensembl_results <- select(
+  org.Mm.eg.db,
+  keytype = 'ENSEMBLTRANS',
+  columns = c('ALIAS','ENSEMBL','ENSEMBLTRANS','ENTREZID','SYMBOL'),
+  keys = remaining4$Transcripts_Targeted) %>%
+  dplyr::filter(! is.na(ENSEMBL))
+
+orgmatches <- remaining4 %>%
+  inner_join(orgmmegdb_ensembl_results, by=c("Transcripts_Targeted" = "ENSEMBLTRANS")) %>%
+#  dplyr::filter(Entrez_ID == ENTREZID) %>%
+  dplyr::filter(Gene_Symbol == ALIAS) %>%
+  dplyr::rename('ensembl_gene_id' = 'ENSEMBL')
+
+# this db has aliases, which is great because genes can have multiple names
+
+check_data_unique(orgmatches)
+# No duplicates :)
+
+
+output_manifest5 <- orgmatches %>%
+  dplyr::select("Probe_ID",
+                "Probe_Name",
+                "Gene_Symbol",
+                "ensembl_gene_id",
+                "Entrez_ID",
+                "Probe_Sequence",
+                "Transcripts_Targeted") %>%
+  bind_rows(output_manifest4)
+
+check_data_unique(output_manifest5)
+
+
+###############################################################################################################
+
+remaining5 <- manifest %>%
+  dplyr::filter(! Probe_ID %in% output_manifest5$Probe_ID)
+
+
+# Search NCBI using entrez for those that have it?
+# Except I don't trust the entrez...
+
+remaining3wentrez <- remaining3 %>%
   dplyr::filter(! is.na(Entrez_ID))
 
 
