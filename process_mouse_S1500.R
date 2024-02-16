@@ -69,7 +69,7 @@ check_data_unique <- function(x){
 }
 
 get_gene_info_from_ncbi_using_entrez <- function(entrez_id){
-  Sys.sleep(1) # added to stop the HTTP 300 timeout errors from NCBI
+  Sys.sleep(4) # added to stop the HTTP 300 timeout errors from NCBI
   
   fetch_result <- entrez_fetch(db="gene",id=entrez_id, rettype="xml", parsed=TRUE)
   fetch_list <- xmlToList(fetch_result)
@@ -323,14 +323,94 @@ remaining5 <- manifest %>%
   dplyr::filter(! Probe_ID %in% output_manifest5$Probe_ID)
 
 
+
+# Use org.Mm.eg.db to find ensembl IDs from gene symbols (matching to aliases)
+
+orgmmegdb_alias_results <- select(
+  org.Mm.eg.db,
+  keytype = 'ALIAS',
+  columns = c('ALIAS','ENSEMBL','ENTREZID','SYMBOL'),
+  keys = remaining5$Gene_Symbol) %>%
+  dplyr::filter(! is.na(ENSEMBL))
+
+# Check for duplicates
+check_n_matches5 <- orgmmegdb_alias_results %>% group_by(ALIAS) %>% mutate(n_copies = n())
+duplicate_rows5 <- check_n_matches5 %>% filter(n_copies > 1)
+
+# Remove duplicate rows
+
+orgmmegdb_alias_nodup <- orgmmegdb_alias_results %>% 
+  dplyr::filter(! ALIAS %in% duplicate_rows5$ALIAS)
+
+orgmmegdb_alias_joined1 <- remaining5 %>%
+  inner_join(orgmmegdb_alias_nodup, by=c("Gene_Symbol" = "ALIAS")) %>%
+  dplyr::rename('ensembl_gene_id' = 'ENSEMBL')
+
+
+# There are duplicates, same alias and ensemblID but different Entrez IDs...
+# Go with the EntrezID that matches the manifest
+
+orgmatches_alias_dedup <- remaining5 %>%
+  inner_join(duplicate_rows5, by=c("Gene_Symbol" = "ALIAS")) %>%
+  dplyr::filter(Entrez_ID == ENTREZID) %>%
+  dplyr::distinct() %>%
+  dplyr::rename('ensembl_gene_id' = 'ENSEMBL') %>%
+  dplyr::select(-c("n_copies"))
+
+orgmatches_alias <- bind_rows(orgmmegdb_alias_joined1, orgmatches_alias_dedup)
+
+output_manifest6 <- orgmatches_alias %>%
+  dplyr::select("Probe_ID",
+                "Probe_Name",
+                "Gene_Symbol",
+                "ensembl_gene_id",
+                "Entrez_ID",
+                "Probe_Sequence",
+                "Transcripts_Targeted") %>%
+  bind_rows(output_manifest5)
+
+check_data_unique(output_manifest6)
+
+###############################################################################################################
+# Creating final output manifest
+# Not all the probes have an ensemblID, which is annoying, but it's very close!
+
+remaining6 <- manifest %>%
+  dplyr::filter(! Probe_ID %in% output_manifest6$Probe_ID)
+remaining6$ensembl_gene_id <- NA
+nrow(remaining6)
+
+output_manifest_final <- remaining6 %>%
+  bind_rows(output_manifest6) %>%
+  dplyr::rename("Ensembl_Gene_ID" =  "ensembl_gene_id") %>%
+  dplyr::arrange(Probe_ID)
+
+check_data_unique(output_manifest_final)
+
+		
+output_file <- file.path(output_directory, output_filename)
+
+write.csv(output_manifest_final, output_file, row.names=F)
+
+###############################################################################################################
+
+
+# Thing to try in the future to finish the remaining 165 probes without EnsemblIDs: NCBI search with Entrez
+# However:
+## At the moment it always 400 error times out, even with a system sleep built into the function
+## I don't trust all the Entrez IDs to be correct!
+
 # Search NCBI using entrez for those that have it?
 # Except I don't trust the entrez...
 
-remaining3wentrez <- remaining3 %>%
+remaining7 <- manifest %>%
+  dplyr::filter(! Probe_ID %in% output_manifest6$Probe_ID)
+
+remaining7wentrez <- remaining7 %>%
   dplyr::filter(! is.na(Entrez_ID))
 
-
-ncbi_results <- bind_rows(lapply(remaining2wentrez$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
+# Still getting the HTTP 400 failure, arrrg
+ncbi_results <- bind_rows(lapply(remaining5wentrez$Entrez_ID, get_gene_info_from_ncbi_using_entrez)) %>% filter(ensembl_id!="NULL")
 
 
 # Gene symbol found by NCBI matches gene symbol from biomart, but not manifest
